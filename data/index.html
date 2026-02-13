@@ -1,0 +1,231 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #f0f0f0; padding: 10px; }
+    .box { background: #fff; padding: 15px; margin: 10px auto; max-width: 400px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+    h2 { margin: 0 0 15px; }
+    h3 { margin: 10px 0 5px; font-size: 16px; color: #555; }
+    input { padding: 8px; width: 70px; text-align: center; font-size: 16px; margin: 5px; border: 1px solid #ddd; border-radius: 3px; }
+    label { font-size: 14px; color: #333; }
+    button { padding: 12px 20px; font-size: 16px; margin: 5px; cursor: pointer; border: none; color: white; border-radius: 4px; }
+    .btn-move { background: #2196F3; }
+    .btn-move:active { background: #678aa6; }
+    .btn-jog { background: #00a38e; }
+    .btn-jog:active { background: #006256; }
+    .btn-step { background: #da6de2; }
+    .btn-step:active { background: #a130a9; }
+    .btn-set { background: #FF9800; }
+    .btn-set:active { background: #ae7b30; }
+    .btn-go { background: #4CAF50; width: 100%; font-weight: bold;}
+    .btn-go:active { background: #057609;}
+    .btn-stop { background: #f44336; width: 100%; font-weight: bold; }
+    .btn-stop:active { background: #9d2319; }
+    .btn-ble { background: #673AB7; width: 100%; }
+    .btn-ble:active { background: #584083; }
+    .btn-upload { background: #4f4f4f; }
+    .btn-photo { background: #AAAAAA; width: 100%; }
+    .btn-wifi { background: #0092ff; width: 100%; }
+    #status-box { font-weight: bold; padding: 10px; margin-top: 10px; border: 1px solid #ccc; background: #eee; font-size: 18px; }
+    .info-box { font-weight: bold; padding: 10px; margin-top: 10px; border: 1px solid #ccc; background: #eee; font-size: 18px; }
+    #ble-status { font-size: 14px; margin-top: 5px; color: #555; font-weight: bold; }
+    .row { display: flex; justify-content: center; align-items: center; gap: 10px; }
+    .settings {font-size: 18px; color: #555; }
+  </style>
+</head>
+<body onload="startPolling()">
+
+  <div class="box">
+    <h2>Камера</h2>
+    <div id="ble-status">Состояние: Не подключено</div>
+    <button class="btn-ble" onclick="connectBLE()">Подключить камеру</button>
+    <button class="btn-photo" id="btn-photo" onclick="testPhoto()">Тестовое фото</button>
+  </div>
+
+  <div class="box">
+    <h2>Ручное перемещение</h2>
+    <div class="row">
+      <!-- Тут можно поменять скорость по-умолчанию-->
+      <div><label>Скорость</label><br><input type="number" id="spd" value="1000"></div>
+
+      <div><label>Шагов на перемещение</label><br><input type="number" id="jog" value="100"></div>
+    </div>
+    <br>
+
+    <!--Кнопочки с предустановками шагов при ручном перемещении-->
+    <button class="btn-jog" onclick="setJog(10)">10</button>
+    <button class="btn-jog" onclick="setJog(100)">100</button>
+    <button class="btn-jog" onclick="setJog(1000)">1000</button>
+    <button class="btn-jog" onclick="setJog(10000)">10000</button>
+    
+    <br>
+    <button class="btn-move" onclick="jog(-1)">←Туда←</button>
+    <button class="btn-move" onclick="jog(1)">→Cюда→</button>
+  </div>
+
+  <div class="box">
+    <button class="btn-stop" onclick="stopAll()">СТОП</button>
+  </div>
+  <div class="box">
+    <div id="status-box">Загрузка...</div>
+  </div>
+  <div class="box">
+    <h2>Стекинг</h2>
+    <button class="btn-set" id="btn-A" onclick="sendCmd('/setA')">Начало</button>
+    <button class="btn-set" id="btn-B" onclick="sendCmd('/setB')">Конец</button>
+    <hr>
+    
+    <div class="row">
+      <div><label>Шагов между кадрами</label><br><input type="number" id="stack" value="100"></div>
+    </div>
+
+    <!--Кнопочки с предустановками шагов между фотками при стекинге-->
+    <button class="btn-step" onclick="setSteps(10)">10</button>
+    <button class="btn-step" onclick="setSteps(50)">50</button>
+    <button class="btn-step" onclick="setSteps(100)">100</button>
+    <button class="btn-step" onclick="setSteps(300)">300</button>
+
+    <!--Стабилизация и выдержка-->
+    <div class="row">
+      <div><label>Стабилизация (мс)</label><br><input type="number" id="settle" value="1000"></div>
+      <div><label>Выдержка (мс)</label><br><input type="number" id="exp" value="1000"></div>
+    </div>
+
+    <div class="info-box" id="info-box-frames">Загрузка...</div>
+    <div class="info-box" id="info-box-time">Загрузка...</div>
+    <br>
+    <button class="btn-go" onclick="startStack()">ЗАПУСК</button>
+    
+  </div>
+  <div class="box">
+  <details>
+  <summary class="settings">Настройки</summary>
+  <button class="btn-wifi" onclick="wifiSettings()">Перенастроить WiFi</button>
+  <form method="POST" action="/upload" enctype="multipart/form-data">
+    <input type="file" name="file">
+    <button class="btn-upload" type="submit">Загрузить файл</button>
+  </form>
+  </details>
+  </div>
+<script>
+  function sendCmd(url) { fetch(url); }
+
+  // Вспомогательная функция для пересчета милисекунд в человекочитаемое время
+  function msToHumanString(ms) {
+  const units = [
+    { label: 'дн', value: 86400000 },
+    { label: 'ч', value: 3600000 },
+    { label: 'мин', value: 60000 },
+    { label: 'с', value: 1000 }
+  ];
+
+  let result = [];
+
+  for (const unit of units) {
+    const amount = Math.floor(ms / unit.value);
+    if (amount > 0) {
+      result.push(`${amount} ${unit.label}`);
+      ms %= unit.value;
+    }
+  }
+
+  return result.join(' ');
+}
+  function startPolling() {
+    setInterval(function() {
+      fetch('/state').then(r => r.json()).then(data => {
+        // Обновление статуса стекинга
+        let box = document.getElementById('status-box');
+        if (data.running == 1) {
+          box.innerText = "Осталось кадров: " + data.rem;
+          box.style.background = "#ffeb3b";
+        } else {
+          box.innerText = "ГОТОВ | Поз: " + data.pos;
+          box.style.background = "#c8e6c9";
+        }
+
+        // Обновление координат точек начала и конца стекинга
+        let btnA = document.getElementById('btn-A');
+        let btnB = document.getElementById('btn-B');
+        btnA.innerText = "Начало: " + data.pointA;
+        btnB.innerText = "Конец: " + data.pointB;
+
+        // Расчет количества снимков и времени
+        let infoBoxFrames = document.getElementById('info-box-frames');
+        let infoBoxTime = document.getElementById('info-box-time');
+        let settleTime = Number(document.getElementById('settle').value);
+        let expTime = Number(document.getElementById('exp').value);
+        
+        let stackSteps = Number(document.getElementById('stack').value);
+        let stackFrames = Math.floor(Math.abs(data.pointA-data.pointB)/stackSteps);
+        let stackTime = stackFrames * ( settleTime + expTime );
+        infoBoxFrames.innerText = "Будет сделано кадров: " + stackFrames;
+        infoBoxTime.innerText = "Время стекинга: " + msToHumanString(stackTime);
+
+        // Обновление статуса BLE
+        let bleBox = document.getElementById('ble-status');
+        let btnPhoto = document.getElementById('btn-photo');
+        if (data.ble == 1) {
+          bleBox.innerText = "Камера: ПОДКЛЮЧЕНА";
+          bleBox.style.color = "green";
+          btnPhoto.style.background = "#418c39";
+        } else if (data.ble == 2) {
+           bleBox.innerText = "Камера: ПОИСК...";
+           bleBox.style.color = "orange";
+           btnPhoto.style.background = "#AAAAAA";
+        } else {
+          bleBox.innerText = "Камера: ОТКЛЮЧЕНА";
+          bleBox.style.color = "red";
+          btnPhoto.style.background = "#AAAAAA";
+        }
+      });
+    }, 1000);
+  }
+
+  function connectBLE() {
+    document.getElementById('ble-status').innerText = "Запуск поиска...";
+    fetch('/ble_connect');
+  }
+
+  function setJog(jog) {
+    let jogInput = document.getElementById('jog');
+    jogInput.value = jog;
+  }
+
+  function setSteps(steps) {
+    let stackInput = document.getElementById('stack');
+    stackInput.value = steps;
+  }
+
+  function jog(dir) {
+    let s = document.getElementById('spd').value;
+    let j = document.getElementById('jog').value;
+    fetch('/jog?dir=' + dir + '&spd=' + s + '&dist=' + j);
+  }
+
+
+  function startStack() {
+    let spd = document.getElementById('spd').value;
+    let stp = document.getElementById('stack').value;
+    let set = document.getElementById('settle').value;
+    let exp = document.getElementById('exp').value;
+    fetch('/start_stack?spd=' + spd + '&step=' + stp + '&set=' + set + '&exp=' + exp);
+  }
+
+  function stopAll() {
+    fetch('/stop'); 
+  }
+  
+  function testPhoto() {
+    fetch('/test_photo')
+  }
+
+  function wifiSettings() {
+    fetch('/wifi'); 
+  }
+</script>
+</body>
+</html>
+
