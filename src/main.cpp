@@ -5,9 +5,11 @@
 #include <LittleFS.h>
 
 // ================= НАСТРОЙКИ СЕТИ =================
-// Если не удается подключиться к ранее сохраненной точке доступа — поднимаем точку доступа "Macro-Rail" с паролем "macrorail321"
-const char* APssid     = "Macro-Rail";
-const char* APpassword = "macrorail321";
+// Если не удается подключиться к ранее сохраненной точке доступа — поднимаем точку доступа "MacroPribor-32" с паролем "MacroPribor-32"
+const char* APssid     = "MacroPribor-32";
+const char* APpassword = "MacroPribor-32";
+const char* Hostname = "macropribor-32";
+
 WiFiManager wifiManager;
 
 // ================= НАСТРОЙКИ BLE (SONY) =================
@@ -299,7 +301,7 @@ void setup() {
     pClient = BLEDevice::createClient();
     pClient->setClientCallbacks(new MyClientCallback());
     // WIFI
-    wifiManager.setHostname("macro-rail");
+    wifiManager.setHostname(Hostname);
     wifiManager.autoConnect(APssid, APpassword);
     // Инициализируем ФС
     if (!LittleFS.begin(true)) {
