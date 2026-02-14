@@ -295,7 +295,7 @@ void setup() {
     stepper.setAcceleration(FIXED_ACCELERATION);
 
     // Init BLE Client
-    BLEDevice::init("ESP32-Rail-Remote");
+    BLEDevice::init("MacroPribor-32");
     BLEDevice::setEncryptionLevel(ESP_BLE_SEC_ENCRYPT);
     BLEDevice::setSecurityCallbacks(new MySecurityCallbacks());
     pClient = BLEDevice::createClient();
