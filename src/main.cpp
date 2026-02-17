@@ -1,16 +1,59 @@
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include "config.h"
 #include <WebServer.h>
 #include <FastAccelStepper.h>
 #include <BLEDevice.h>
-#include <WiFiManager.h>
 #include <LittleFS.h>
 
 // ================= НАСТРОЙКИ СЕТИ =================
-// Если не удается подключиться к ранее сохраненной точке доступа — поднимаем точку доступа "MacroPribor-32" с паролем "MacroPribor-32"
-const char* APssid     = "MacroPribor-32";
-const char* APpassword = "MacroPribor-32";
-const char* Hostname   = "macropribor-32";
 
-WiFiManager wifiManager;
+bool connectToWifi(WifiConfig config) {
+    Serial.printf("\nПодключение к: %s\n", config.ssid);
+
+    WiFi.mode(WIFI_STA);
+
+    // Устанавливаем Hostname ДО подключения
+    WiFi.setHostname(device_hostname);
+
+    if (config.useStaticIP) {
+        if (!WiFi.config(config.local_ip, config.gateway, config.subnet)) {
+            Serial.println("Ошибка Static IP");
+        }
+    }
+
+    WiFi.begin(config.ssid, config.pass);
+
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+        delay(500);
+        Serial.print(".");
+        attempts++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nГотово!");
+        Serial.print("IP: ");
+        Serial.println(WiFi.localIP());
+
+        // Запуск mDNS, чтобы устройство откликалось на имя.local
+        if (MDNS.begin(device_hostname)) {
+            Serial.printf("mDNS запущен: http://%s.local\n", device_hostname);
+        }
+
+        return true;
+    }
+    return false;
+}
+
+void startFallbackAP() {
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(fallback_ssid, fallback_pass);
+    // В режиме AP имя хоста обычно не резолвится через DNS роутера,
+    // но mDNS будет работать, если вы подключитесь напрямую к этой AP.
+    MDNS.begin(device_hostname);
+    Serial.printf("AP запущена: %s. IP: %s\n", fallback_ssid, WiFi.softAPIP().toString().c_str());
+}
 
 WebServer server(80);
 
@@ -263,11 +306,6 @@ void handleTestPhoto() {
     server.send(200, "text/plain", "OK");
 }
 
-void handleWifiReset() {
-    wifiManager.resetSettings();
-    ESP.restart();
-}
-
 void handleUpload() {
     HTTPUpload& upload = server.upload();
 
@@ -293,6 +331,12 @@ void handleUpload() {
 void setup() {
     Serial.begin(115200);
 
+    // Инициализация wifi
+    if (!connectToWifi(ap1)) {
+        if (!connectToWifi(ap2)) {
+            startFallbackAP();
+        }
+    }
     // Инициализация FastAccelStepper
     engine.init();
     stepper = engine.stepperConnectToPin(PIN_STEP);
@@ -310,10 +354,6 @@ void setup() {
     pClient = BLEDevice::createClient();
     pClient->setClientCallbacks(new MyClientCallback());
 
-    // WIFI
-    wifiManager.setHostname(Hostname);
-    wifiManager.autoConnect(APssid, APpassword);
-
     // Инициализируем ФС
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS mount failed!");
@@ -329,7 +369,7 @@ void setup() {
     server.on("/setB", handleSetB);
     server.on("/start_stack", handleStartStack);
     server.on("/stop", handleStop);
-    server.on("/wifi", handleWifiReset);
+    //server.on("/wifi", handleWifiReset);
     server.on("/test_photo", handleTestPhoto);
     server.on("/upload", HTTP_POST, []() { server.send(200); }, handleUpload);
     server.begin();
