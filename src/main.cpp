@@ -1,5 +1,4 @@
 #include <WiFi.h>
-#include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <WebServer.h>
@@ -11,16 +10,15 @@
 // ================= НАСТРОЙКИ СЕТИ =================
 
 bool connectToWifi(WifiConfig config) {
-    Serial.printf("\nПодключение к: %s\n", config.ssid);
+    Serial.printf("\nConnecting to: %s\n", config.ssid);
 
     WiFi.mode(WIFI_STA);
-
-    // Устанавливаем Hostname ДО подключения
+    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
     WiFi.setHostname(device_hostname);
 
     if (config.useStaticIP) {
         if (!WiFi.config(config.local_ip, config.gateway, config.subnet)) {
-            Serial.println("Ошибка Static IP");
+            Serial.println("Static IP config error");
         }
     }
 
@@ -34,14 +32,10 @@ bool connectToWifi(WifiConfig config) {
     }
 
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nГотово!");
         Serial.print("IP: ");
         Serial.println(WiFi.localIP());
-
-        // Запуск mDNS, чтобы устройство откликалось на имя.local
-        if (MDNS.begin(device_hostname)) {
-            Serial.printf("mDNS запущен: http://%s.local\n", device_hostname);
-        }
+        Serial.print("Hostname in use: ");
+        Serial.println(WiFi.getHostname());
 
         return true;
     }
@@ -51,10 +45,7 @@ bool connectToWifi(WifiConfig config) {
 void startFallbackAP() {
     WiFi.mode(WIFI_AP);
     WiFi.softAP(fallback_ssid, fallback_pass);
-    // В режиме AP имя хоста обычно не резолвится через DNS роутера,
-    // но mDNS будет работать, если вы подключитесь напрямую к этой AP.
-    MDNS.begin(device_hostname);
-    Serial.printf("AP запущена: %s. IP: %s\n", fallback_ssid, WiFi.softAPIP().toString().c_str());
+    Serial.printf("AP sterted: %s. IP: %s\n", fallback_ssid, WiFi.softAPIP().toString().c_str());
 }
 
 WebServer server(80);
@@ -94,6 +85,7 @@ long          nextPos          = 0;
 int           direction        = 1;
 int           SHUTTER_PULSE_MS = 200;
 uint32_t      last_ota_time    = 0;
+bool          otaActive        = false;
 // Параметры с веба
 long web_speed          = 1000;
 long web_stack_step     = 100;
@@ -334,6 +326,7 @@ void handleUpload() {
 void setup() {
     Serial.begin(115200);
 
+    delay(10000);
     // Инициализация wifi
     if (!connectToWifi(ap1)) {
         if (!connectToWifi(ap2)) {
@@ -342,19 +335,24 @@ void setup() {
     }
 
     // OTA
+    ArduinoOTA.setHostname(device_hostname);
     ArduinoOTA
         .onStart([]() {
             String type;
+            otaActive = true;
             if (ArduinoOTA.getCommand() == U_FLASH) {
                 type = "sketch";
-            } else {  // U_SPIFFS
+            } else {  // LittleFS
                 type = "filesystem";
             }
 
             // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
             Serial.println("Start updating " + type);
         })
-        .onEnd([]() { Serial.println("\nEnd"); })
+        .onEnd([]() {
+            Serial.println("\nEnd");
+            otaActive = false;
+        })
         .onProgress([](unsigned int progress, unsigned int total) {
             if (millis() - last_ota_time > 500) {
                 Serial.printf("Progress: %u%%\n", (progress / (total / 100)));
@@ -362,6 +360,7 @@ void setup() {
             }
         })
         .onError([](ota_error_t error) {
+            otaActive = false;
             Serial.printf("Error[%u]: ", error);
             if (error == OTA_AUTH_ERROR) {
                 Serial.println("Auth Failed");
@@ -419,7 +418,15 @@ void setup() {
 // ================= LOOP =================
 void loop() {
     server.handleClient();
-    ArduinoOTA.handle();
+    if (otaActive) {
+        ArduinoOTA.handle();  // вызываем каждый проход, пока идёт обновление
+    } else {
+        static unsigned long lastOta = 0;
+        if (millis() - lastOta > 100) { // вызываем реже, если обновление не активно
+            lastOta = millis();
+            ArduinoOTA.handle();
+        }
+    }
 
     // --- ОБРАБОТКА BLE ---
     if (doScan) {
