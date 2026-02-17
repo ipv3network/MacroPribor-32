@@ -1,10 +1,12 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
-#include "config.h"
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 #include <WebServer.h>
 #include <FastAccelStepper.h>
 #include <BLEDevice.h>
 #include <LittleFS.h>
+#include "config.h"
 
 // ================= НАСТРОЙКИ СЕТИ =================
 
@@ -91,6 +93,7 @@ unsigned long stateTimer       = 0;
 long          nextPos          = 0;
 int           direction        = 1;
 int           SHUTTER_PULSE_MS = 200;
+uint32_t      last_ota_time    = 0;
 // Параметры с веба
 long web_speed          = 1000;
 long web_stack_step     = 100;
@@ -337,6 +340,44 @@ void setup() {
             startFallbackAP();
         }
     }
+
+    // OTA
+    ArduinoOTA
+        .onStart([]() {
+            String type;
+            if (ArduinoOTA.getCommand() == U_FLASH) {
+                type = "sketch";
+            } else {  // U_SPIFFS
+                type = "filesystem";
+            }
+
+            // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+            Serial.println("Start updating " + type);
+        })
+        .onEnd([]() { Serial.println("\nEnd"); })
+        .onProgress([](unsigned int progress, unsigned int total) {
+            if (millis() - last_ota_time > 500) {
+                Serial.printf("Progress: %u%%\n", (progress / (total / 100)));
+                last_ota_time = millis();
+            }
+        })
+        .onError([](ota_error_t error) {
+            Serial.printf("Error[%u]: ", error);
+            if (error == OTA_AUTH_ERROR) {
+                Serial.println("Auth Failed");
+            } else if (error == OTA_BEGIN_ERROR) {
+                Serial.println("Begin Failed");
+            } else if (error == OTA_CONNECT_ERROR) {
+                Serial.println("Connect Failed");
+            } else if (error == OTA_RECEIVE_ERROR) {
+                Serial.println("Receive Failed");
+            } else if (error == OTA_END_ERROR) {
+                Serial.println("End Failed");
+            }
+        });
+
+    ArduinoOTA.begin();
+
     // Инициализация FastAccelStepper
     engine.init();
     stepper = engine.stepperConnectToPin(PIN_STEP);
@@ -369,7 +410,7 @@ void setup() {
     server.on("/setB", handleSetB);
     server.on("/start_stack", handleStartStack);
     server.on("/stop", handleStop);
-    //server.on("/wifi", handleWifiReset);
+    // server.on("/wifi", handleWifiReset);
     server.on("/test_photo", handleTestPhoto);
     server.on("/upload", HTTP_POST, []() { server.send(200); }, handleUpload);
     server.begin();
@@ -378,6 +419,7 @@ void setup() {
 // ================= LOOP =================
 void loop() {
     server.handleClient();
+    ArduinoOTA.handle();
 
     // --- ОБРАБОТКА BLE ---
     if (doScan) {
