@@ -32,7 +32,7 @@
     .info-box { font-weight: bold; padding: 10px; margin-top: 10px; border: 1px solid #ccc; background: #eee; font-size: 18px; }
     #ble-status { font-size: 14px; margin-top: 5px; color: #555; font-weight: bold; }
     .row { display: flex; justify-content: center; align-items: center; gap: 10px; }
-    .settings {font-size: 18px; color: #555; }
+    .settings {font-size: 22px; font-weight: bold; }
   </style>
 </head>
 <body onload="startPolling()">
@@ -141,9 +141,12 @@
         if (data.running == 1) {
           box.innerText = "Осталось кадров: " + data.rem;
           box.style.background = "#ffeb3b";
-        } else {
+        } else if (data.movingA== 1) {
+	  box.innerText = "Движ. в начало | Поз: " + data.pos;
+	  box.style.background = "#c8d3e6";
+	} else {
           box.innerText = "ГОТОВ | Поз: " + data.pos;
-          box.style.background = "#c8e6c9";
+          box.style.background = "#cde6c8";
         }
 
         // Обновление координат точек начала и конца стекинга

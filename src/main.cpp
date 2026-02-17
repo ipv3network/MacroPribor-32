@@ -1,5 +1,5 @@
 #include <WebServer.h>
-#include <AccelStepper.h>
+#include <FastAccelStepper.h>
 #include <BLEDevice.h>
 #include <WiFiManager.h>
 #include <LittleFS.h>
@@ -8,7 +8,7 @@
 // Если не удается подключиться к ранее сохраненной точке доступа — поднимаем точку доступа "MacroPribor-32" с паролем "MacroPribor-32"
 const char* APssid     = "MacroPribor-32";
 const char* APpassword = "MacroPribor-32";
-const char* Hostname = "macropribor-32";
+const char* Hostname   = "macropribor-32";
 
 WiFiManager wifiManager;
 
@@ -20,7 +20,7 @@ static BLEUUID serviceUUID("8000FF00-FF00-FFFF-FFFF-FFFFFFFFFFFF");
 static BLEUUID charCommandUUID((uint16_t)0xFF01);
 static BLEUUID charNotifyUUID((uint16_t)0xFF02);
 
-// Команды (из вашего файла)
+// Команды управления камерой
 uint8_t HALF_DOWN[] = {0x01, 0x07};  // Половинное нажатие
 uint8_t FULL_DOWN[] = {0x01, 0x09};  // Полное нажатие
 uint8_t FULL_UP[]   = {0x01, 0x08};  // Отпустить
@@ -31,12 +31,14 @@ uint8_t HALF_UP[]   = {0x01, 0x06};  // Отпустить на половину
 #define PIN_DIR 1
 
 // ================= НАСТРОЙКИ МЕХАНИКИ =================
-#define FIXED_ACCELERATION 1000
-#define MAX_SPEED 5000
+#define FIXED_ACCELERATION 1400
+#define SPEED 5000
 #define SHUTTER_PULSE_MS 200
 
-AccelStepper stepper(AccelStepper::DRIVER, PIN_STEP, PIN_DIR);
-WebServer    server(80);
+FastAccelStepperEngine engine  = FastAccelStepperEngine();
+FastAccelStepper*      stepper = NULL;
+
+WebServer server(80);
 
 // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
 long          pointA     = 0;
@@ -63,11 +65,6 @@ BLERemoteCharacteristic* remoteNotify;
 BLEClient*               pClient;
 
 // ================= BLE КЛАССЫ ОБРАТНОЙ СВЯЗИ =================
-
-// Обработка уведомлений от камеры (для отладки)
-// static void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
-// Можно добавить логирование, если нужно
-//}
 
 // Клиент подключился/отключился
 class MyClientCallback : public BLEClientCallbacks {
@@ -132,8 +129,6 @@ bool connectToCamera() {
             return false;
         }
 
-        // if (remoteNotify->canNotify()) remoteNotify->registerForNotify(notifyCallback);
-
         bleConnected = true;
         return true;
     }
@@ -143,9 +138,8 @@ bool connectToCamera() {
 void triggerShutterBLE() {
     if (!bleConnected || remoteCommand == nullptr) return;
 
-    // Последовательность как в вашем файле: Focus -> Shutter
     remoteCommand->writeValue(HALF_DOWN, 2, true);
-    delay(50);  // Небольшая задержка для фокуса
+    delay(50);
     remoteCommand->writeValue(FULL_DOWN, 2, true);
 }
 
@@ -175,9 +169,9 @@ void handleState() {
     if (isStacking && web_stack_step > 0) {
         long dist = 0;
         if (direction == 1)
-            dist = pointB - stepper.currentPosition();
+            dist = pointB - stepper->getCurrentPosition();
         else
-            dist = stepper.currentPosition() - pointB;
+            dist = stepper->getCurrentPosition() - pointB;
         if (dist < 0) dist = 0;
         framesLeft = dist / web_stack_step;
     }
@@ -189,9 +183,14 @@ void handleState() {
     else if (doScan)
         bleStatus = 2;
 
+    String isRunning = "0";
+    String isMovingToA = "0";
+    if ( isStacking && stackState != 0 ) { isRunning = "1"; };
+    if ( isStacking && stackState == 0 ) { isMovingToA = "1"; };
     String json = "{";
-    json += "\"running\": " + String(isStacking ? 1 : 0) + ",";
-    json += "\"pos\": " + String(stepper.currentPosition()) + ",";
+    json += "\"running\": " + isRunning + ",";
+    json += "\"movingA\": " + isMovingToA + ",";
+    json += "\"pos\": " + String(stepper->getCurrentPosition()) + ",";
     json += "\"rem\": " + String(framesLeft) + ",";
     json += "\"ble\": " + String(bleStatus) + ",";
     json += "\"pointA\": " + String(pointA) + ",";
@@ -202,7 +201,7 @@ void handleState() {
 
 void handleBLEConnect() {
     if (!bleConnected && !doScan) {
-        doScan = true;  // Флаг для запуска сканера в loop()
+        doScan = true;
         server.send(200, "text/plain", "SCANNING");
     } else {
         server.send(200, "text/plain", "ALREADY ACTIVE");
@@ -213,18 +212,18 @@ void handleJog() {
     if (isStacking) return;
     web_speed = server.arg("spd").toInt();
     long dist = server.arg("dist").toInt() * server.arg("dir").toInt();
-    stepper.setMaxSpeed(web_speed);
-    stepper.move(dist);
+    stepper->setSpeedInHz(web_speed);
+    stepper->move(dist);  // относительное перемещение (добавляет к последней целевой позиции)
     server.send(200, "text/plain", "OK");
 }
 
 void handleSetA() {
-    pointA = stepper.currentPosition();
+    pointA = stepper->getCurrentPosition();
     server.send(200, "text/plain", "A");
 }
 
 void handleSetB() {
-    pointB = stepper.currentPosition();
+    pointB = stepper->getCurrentPosition();
     server.send(200, "text/plain", "B");
 }
 
@@ -241,8 +240,8 @@ void handleStartStack() {
         direction = -1;
     web_stack_step = abs(web_stack_step);
 
-    stepper.setMaxSpeed(web_speed);
-    stepper.moveTo(pointA);
+    stepper->setSpeedInHz(web_speed);
+    stepper->moveTo(pointA);
     isStacking = true;
     stackState = 0;
     server.send(200, "text/plain", "OK");
@@ -250,7 +249,7 @@ void handleStartStack() {
 
 void handleStop() {
     isStacking = false;
-    stepper.setCurrentPosition(stepper.currentPosition());
+    stepper->stopMove();
     server.send(200, "text/plain", "STOPPED");
 }
 
@@ -273,7 +272,7 @@ void handleUpload() {
         String filename = "/" + upload.filename;
         Serial.print("Upload Start: ");
         Serial.println(filename);
-        LittleFS.remove(filename);  // удалить старый если есть
+        LittleFS.remove(filename);
         File file = LittleFS.open(filename, "w");
         file.close();
     } else if (upload.status == UPLOAD_FILE_WRITE) {
@@ -291,8 +290,15 @@ void handleUpload() {
 void setup() {
     Serial.begin(115200);
 
-    stepper.setMaxSpeed(MAX_SPEED);
-    stepper.setAcceleration(FIXED_ACCELERATION);
+    // Инициализация FastAccelStepper
+    engine.init();
+    stepper = engine.stepperConnectToPin(PIN_STEP);
+    if (stepper) {
+        stepper->setDirectionPin(PIN_DIR);
+        stepper->setSpeedInHz(SPEED);
+        stepper->setAcceleration(FIXED_ACCELERATION);
+        stepper->setCurrentPosition(0);
+    }
 
     // Init BLE Client
     BLEDevice::init("MacroPribor-32");
@@ -300,18 +306,21 @@ void setup() {
     BLEDevice::setSecurityCallbacks(new MySecurityCallbacks());
     pClient = BLEDevice::createClient();
     pClient->setClientCallbacks(new MyClientCallback());
+
     // WIFI
     wifiManager.setHostname(Hostname);
     wifiManager.autoConnect(APssid, APpassword);
+
     // Инициализируем ФС
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS mount failed!");
         return;
     }
+
     // Веб сервер
     server.on("/", handleRoot);
     server.on("/state", handleState);
-    server.on("/ble_connect", handleBLEConnect);  // Кнопка подключения
+    server.on("/ble_connect", handleBLEConnect);
     server.on("/jog", handleJog);
     server.on("/setA", handleSetA);
     server.on("/setB", handleSetB);
@@ -328,27 +337,24 @@ void loop() {
     server.handleClient();
 
     // --- ОБРАБОТКА BLE ---
-    // Сканирование запускаем здесь, чтобы не блокировать веб-сервер внутри хендлера
     if (doScan) {
         BLEScan* pBLEScan = BLEDevice::getScan();
         pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
         pBLEScan->setActiveScan(true);
-        pBLEScan->start(5, false);  // Сканируем 5 секунд
-        // Если не нашли, выключаем скан
+        pBLEScan->start(5, false);
         if (!doConnect) {
             doScan = false;
             Serial.println("Scan finished, camera not found.");
         }
     }
 
-    // Подключение, если нашли устройство
     if (doConnect) {
         if (connectToCamera()) {
             Serial.println("Success connection!");
         } else {
             Serial.println("Failed connection.");
         }
-        doConnect = false;  // Сбрасываем флаг попытки
+        doConnect = false;
     }
 
     // Стекинг
@@ -356,7 +362,7 @@ void loop() {
         switch (stackState) {
             // 0: Возврат к старту
             case 0:
-                if (stepper.distanceToGo() == 0) {
+                if (!stepper->isRunning()) {
                     delay(1000);
                     nextPos    = pointA;
                     stackState = 1;
@@ -365,10 +371,10 @@ void loop() {
 
             // 1: Движение к позиции кадра
             case 1:
-                if ((direction == 1 && stepper.currentPosition() >= pointB) || (direction == -1 && stepper.currentPosition() <= pointB)) {
+                if ((direction == 1 && stepper->getCurrentPosition() >= pointB) || (direction == -1 && stepper->getCurrentPosition() <= pointB)) {
                     isStacking = false;
                 } else {
-                    if (stepper.distanceToGo() == 0) {
+                    if (!stepper->isRunning()) {
                         stateTimer = millis();
                         stackState = 2;
                     }
@@ -378,20 +384,16 @@ void loop() {
             // 2: Стабилизация (Settle)
             case 2:
                 if (millis() - stateTimer > web_settle_delay) {
-                    triggerShutterBLE();  // Нажать спуск
+                    triggerShutterBLE();
                     stateTimer = millis();
                     stackState = 3;
                 }
                 break;
 
-                // 3: Импульс спуска (держать нажатым)
-                // Интересный момент: можно перевести камеру в режим ручной выдержки (B),
-                // и тогда длительность выдержки будет настраиваться через веб-интерфейс.
-                // Не знаю зачем это нужно, но почему бы и нет.
-                // Такой режим будет корректно работать только с длинными выдержками по несколько секунд
+            // 3: Импульс спуска
             case 3:
                 if (millis() - stateTimer > SHUTTER_PULSE_MS) {
-                    releaseShutterBLE();  // Отпустить спуск
+                    releaseShutterBLE();
                     stateTimer = millis();
                     stackState = 4;
                 }
@@ -400,13 +402,11 @@ void loop() {
             // 4: Ожидание выдержки
             case 4:
                 if (millis() - stateTimer > web_exposure_delay) {
-                    nextPos = stepper.currentPosition() + (web_stack_step * direction);
-                    stepper.moveTo(nextPos);
+                    nextPos = stepper->getCurrentPosition() + (web_stack_step * direction);
+                    stepper->moveTo(nextPos);
                     stackState = 1;
                 }
                 break;
         }
     }
-
-    stepper.run();
 }
