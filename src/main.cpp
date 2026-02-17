@@ -1,52 +1,20 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <FastAccelStepper.h>
 #include <BLEDevice.h>
 #include <LittleFS.h>
-#include "config.h"
+#include <WiFiManager.h>
 
 // ================= НАСТРОЙКИ СЕТИ =================
+// Если не удается подключиться к ранее сохраненной точке доступа — поднимаем точку доступа "MacroPribor-32" с паролем "MacroPribor-32"
+const char* APssid     = "MacroPribor-32";
+const char* APpassword = "MacroPribor-32";
+const char* Hostname   = "macropribor-32";
 
-bool connectToWifi(WifiConfig config) {
-    Serial.printf("\nConnecting to: %s\n", config.ssid);
-
-    WiFi.mode(WIFI_STA);
-    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
-    WiFi.setHostname(device_hostname);
-
-    if (config.useStaticIP) {
-        if (!WiFi.config(config.local_ip, config.gateway, config.subnet)) {
-            Serial.println("Static IP config error");
-        }
-    }
-
-    WiFi.begin(config.ssid, config.pass);
-
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.print("IP: ");
-        Serial.println(WiFi.localIP());
-        Serial.print("Hostname in use: ");
-        Serial.println(WiFi.getHostname());
-
-        return true;
-    }
-    return false;
-}
-
-void startFallbackAP() {
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(fallback_ssid, fallback_pass);
-    Serial.printf("AP sterted: %s. IP: %s\n", fallback_ssid, WiFi.softAPIP().toString().c_str());
-}
+WiFiManager wifiManager;
 
 WebServer server(80);
 
@@ -301,6 +269,11 @@ void handleTestPhoto() {
     server.send(200, "text/plain", "OK");
 }
 
+void handleWifiReset() {
+    wifiManager.resetSettings();
+    ESP.restart();
+}
+
 void handleUpload() {
     HTTPUpload& upload = server.upload();
 
@@ -326,16 +299,11 @@ void handleUpload() {
 void setup() {
     Serial.begin(115200);
 
-    delay(10000);
-    // Инициализация wifi
-    if (!connectToWifi(ap1)) {
-        if (!connectToWifi(ap2)) {
-            startFallbackAP();
-        }
-    }
+    // WIFI
+    wifiManager.setHostname(Hostname);
+    wifiManager.autoConnect(APssid, APpassword);
 
     // OTA
-    ArduinoOTA.setHostname(device_hostname);
     ArduinoOTA
         .onStart([]() {
             String type;
@@ -374,7 +342,6 @@ void setup() {
                 Serial.println("End Failed");
             }
         });
-
     ArduinoOTA.begin();
 
     // Инициализация FastAccelStepper
@@ -409,9 +376,7 @@ void setup() {
     server.on("/setB", handleSetB);
     server.on("/start_stack", handleStartStack);
     server.on("/stop", handleStop);
-    // server.on("/wifi", handleWifiReset);
     server.on("/test_photo", handleTestPhoto);
-    server.on("/upload", HTTP_POST, []() { server.send(200); }, handleUpload);
     server.begin();
 }
 
@@ -422,7 +387,7 @@ void loop() {
         ArduinoOTA.handle();  // вызываем каждый проход, пока идёт обновление
     } else {
         static unsigned long lastOta = 0;
-        if (millis() - lastOta > 100) { // вызываем реже, если обновление не активно
+        if (millis() - lastOta > 50) {  // вызываем реже, если обновление не активно
             lastOta = millis();
             ArduinoOTA.handle();
         }
