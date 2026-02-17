@@ -12,6 +12,8 @@ const char* Hostname   = "macropribor-32";
 
 WiFiManager wifiManager;
 
+WebServer server(80);
+
 // ================= НАСТРОЙКИ BLE (SONY) =================
 #define CAMERA_NAME "ILCE-7C"  // Имя камеры в Bluetooth меню
 
@@ -33,22 +35,19 @@ uint8_t HALF_UP[]   = {0x01, 0x06};  // Отпустить на половину
 // ================= НАСТРОЙКИ МЕХАНИКИ =================
 #define FIXED_ACCELERATION 1400
 #define SPEED 5000
-#define SHUTTER_PULSE_MS 200
 
 FastAccelStepperEngine engine  = FastAccelStepperEngine();
 FastAccelStepper*      stepper = NULL;
 
-WebServer server(80);
-
 // ================= ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =================
-long          pointA     = 0;
-long          pointB     = 0;
-bool          isStacking = false;
-int           stackState = 0;
-unsigned long stateTimer = 0;
-long          nextPos    = 0;
-int           direction  = 1;
-
+long          pointA           = 0;
+long          pointB           = 0;
+bool          isStacking       = false;
+int           stackState       = 0;
+unsigned long stateTimer       = 0;
+long          nextPos          = 0;
+int           direction        = 1;
+int           SHUTTER_PULSE_MS = 200;
 // Параметры с веба
 long web_speed          = 1000;
 long web_stack_step     = 100;
@@ -183,10 +182,14 @@ void handleState() {
     else if (doScan)
         bleStatus = 2;
 
-    String isRunning = "0";
+    String isRunning   = "0";
     String isMovingToA = "0";
-    if ( isStacking && stackState != 0 ) { isRunning = "1"; };
-    if ( isStacking && stackState == 0 ) { isMovingToA = "1"; };
+    if (isStacking && stackState != 0) {
+        isRunning = "1";
+    };
+    if (isStacking && stackState == 0) {
+        isMovingToA = "1";
+    };
     String json = "{";
     json += "\"running\": " + isRunning + ",";
     json += "\"movingA\": " + isMovingToA + ",";
@@ -381,7 +384,7 @@ void loop() {
                 }
                 break;
 
-            // 2: Стабилизация (Settle)
+            // 2: Стабилизация (сколько постоять после перемещения каретки)
             case 2:
                 if (millis() - stateTimer > web_settle_delay) {
                     triggerShutterBLE();
