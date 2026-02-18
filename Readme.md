@@ -98,8 +98,7 @@ pio run --target upload # заливка прошивки
 pio run --target uploadfs # заливка файловой системы
 ```
 6. После успешной [настройки сети](#настройка-сети) можно обновлять прошивку по сети через OTA:
-```
-bash
+```bash
 pio run -t clean -e ota
 pio run -e ota --target upload
 pio run -e ota --target uploadfs
