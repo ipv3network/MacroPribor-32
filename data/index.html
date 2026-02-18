@@ -27,7 +27,7 @@
     .btn-ble:active { background: #584083; }
     .btn-upload { background: #4f4f4f; }
     .btn-photo { background: #AAAAAA; width: 100%; }
-    .btn-wifi { background: #0092ff; width: 100%; }
+    #btn-wifi { background: #0092ff; width: 100%; }
     #status-box { font-weight: bold; padding: 10px; margin-top: 10px; border: 1px solid #ccc; background: #eee; font-size: 18px; }
     .info-box { font-weight: bold; padding: 10px; margin-top: 10px; border: 1px solid #ccc; background: #eee; font-size: 18px; }
     #ble-status { font-size: 14px; margin-top: 5px; color: #555; font-weight: bold; }
@@ -102,11 +102,8 @@
   <div class="box">
   <details>
   <summary class="settings">Настройки</summary>
-  <button class="btn-wifi" onclick="wifiSettings()">Перенастроить Wi-Fi</button>
-  <form method="POST" action="/upload" enctype="multipart/form-data">
-    <input type="file" name="file">
-    <button class="btn-upload" type="submit">Загрузить файл</button>
-  </form>
+  <button id="btn-wifi" onclick="wifiSettings()">Сбросить настройки Wi-Fi</button>
+
   </details>
   </div>
 <script>
@@ -227,6 +224,10 @@
 
   function wifiSettings() {
     fetch('/wifi'); 
+    let wifibtn = document.getElementById('btn-wifi');
+    wifibtn.innerHTML = "Переподключитесь к точке доступа MacroPribor-32";
+    wifibtn.style.background = "#ff5555";
+    fetch('/wifi');
   }
 </script>
 </body>

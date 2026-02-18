@@ -1,12 +1,11 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <WiFiManager.h>
 #include <ArduinoOTA.h>
-#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <FastAccelStepper.h>
 #include <BLEDevice.h>
 #include <LittleFS.h>
-#include <WiFiManager.h>
 
 // ================= НАСТРОЙКИ СЕТИ =================
 // Если не удается подключиться к ранее сохраненной точке доступа — поднимаем точку доступа "MacroPribor-32" с паролем "MacroPribor-32"
@@ -15,8 +14,7 @@ const char* APpassword = "MacroPribor-32";
 const char* Hostname   = "macropribor-32";
 
 WiFiManager wifiManager;
-
-WebServer server(80);
+WebServer      server(80);
 
 // ================= НАСТРОЙКИ BLE (SONY) =================
 #define CAMERA_NAME "ILCE-7C"  // Имя камеры в Bluetooth меню
@@ -302,7 +300,6 @@ void setup() {
     // WIFI
     wifiManager.setHostname(Hostname);
     wifiManager.autoConnect(APssid, APpassword);
-
     // OTA
     ArduinoOTA
         .onStart([]() {
@@ -376,7 +373,9 @@ void setup() {
     server.on("/setB", handleSetB);
     server.on("/start_stack", handleStartStack);
     server.on("/stop", handleStop);
+    server.on("/wifi", handleWifiReset);
     server.on("/test_photo", handleTestPhoto);
+    server.on("/upload", HTTP_POST, []() { server.send(200); }, handleUpload);
     server.begin();
 }
 
