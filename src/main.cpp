@@ -272,27 +272,6 @@ void handleWifiReset() {
     ESP.restart();
 }
 
-void handleUpload() {
-    HTTPUpload& upload = server.upload();
-
-    if (upload.status == UPLOAD_FILE_START) {
-        String filename = "/" + upload.filename;
-        Serial.print("Upload Start: ");
-        Serial.println(filename);
-        LittleFS.remove(filename);
-        File file = LittleFS.open(filename, "w");
-        file.close();
-    } else if (upload.status == UPLOAD_FILE_WRITE) {
-        File file = LittleFS.open("/" + upload.filename, "a");
-        file.write(upload.buf, upload.currentSize);
-        file.close();
-    } else if (upload.status == UPLOAD_FILE_END) {
-        Serial.print("Upload End: ");
-        Serial.println(upload.totalSize);
-        server.send(200, "text/html", "File uploaded<br><a href=/>go back</a>");
-    }
-}
-
 // ================= SETUP =================
 void setup() {
     Serial.begin(115200);
@@ -375,7 +354,6 @@ void setup() {
     server.on("/stop", handleStop);
     server.on("/wifi", handleWifiReset);
     server.on("/test_photo", handleTestPhoto);
-    server.on("/upload", HTTP_POST, []() { server.send(200); }, handleUpload);
     server.begin();
 }
 
