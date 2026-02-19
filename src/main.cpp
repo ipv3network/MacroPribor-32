@@ -397,7 +397,7 @@ void loop() {
             // 0: Возврат к старту
             case 0:
                 if (!stepper->isRunning()) {
-                    delay(1000);
+                    delay(100);
                     nextPos    = pointA;
                     stackState = 1;
                 }
@@ -415,7 +415,7 @@ void loop() {
                 }
                 break;
 
-            // 2: Стабилизация (сколько постоять после перемещения каретки)
+            // 2: Стабилизация и спуск
             case 2:
                 if (millis() - stateTimer > web_settle_delay) {
                     triggerShutterBLE();
@@ -424,7 +424,7 @@ void loop() {
                 }
                 break;
 
-            // 3: Импульс спуска
+            // 3: Выдержка и отпускание
             case 3:
                 if (millis() - stateTimer > SHUTTER_PULSE_MS) {
                     releaseShutterBLE();
